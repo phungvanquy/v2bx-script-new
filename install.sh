@@ -113,20 +113,20 @@ install_V2bX() {
     cd /usr/local/V2bX/
 
     if  [ $# == 0 ] ;then
-        last_version=$(curl -Ls "https://api.github.com/repos/wyx2685/V2bX/releases/latest" | grep '"tag_name":' | sed -E 's/.*"([^"]+)".*/\1/')
+        last_version=$(curl -Ls "https://api.github.com/repos/phungvanquy/v2bx-new/releases/latest" | grep '"tag_name":' | sed -E 's/.*"([^"]+)".*/\1/')
         if [[ ! -n "$last_version" ]]; then
             echo -e "${red}Failed to detect V2bX version, possibly exceeding Github API limit. Please try again later or manually specify the V2bX version to install.${plain}"
             exit 1
         fi
         echo -e "Detected the latest version of V2bX: ${last_version}, starting installation"
-        wget -q -N --no-check-certificate -O /usr/local/V2bX/V2bX-linux.zip https://github.com/wyx2685/V2bX/releases/download/${last_version}/V2bX-linux-${arch}.zip
+        wget -q -N --no-check-certificate -O /usr/local/V2bX/V2bX-linux.zip https://github.com/phungvanquy/v2bx-new/releases/download/${last_version}/V2bX-linux-${arch}.zip
         if [[ $? -ne 0 ]]; then
             echo -e "${red}Failed to download V2bX, please ensure your server can download files from Github${plain}"
             exit 1
         fi
     else
         last_version=$1
-        url="https://github.com/wyx2685/V2bX/releases/download/${last_version}/V2bX-linux-${arch}.zip"
+        url="https://github.com/phungvanquy/v2bx-new/releases/download/${last_version}/V2bX-linux-${arch}.zip"
         echo -e "Starting installation of V2bX $1"
         wget -q -N --no-check-certificate -O /usr/local/V2bX/V2bX-linux.zip ${url}
         if [[ $? -ne 0 ]]; then
@@ -140,7 +140,7 @@ install_V2bX() {
     chmod +x V2bX
     mkdir /etc/V2bX/ -p
     rm /etc/systemd/system/V2bX.service -f
-    file="https://raw.githubusercontent.com/phungvanquy/V2bx-script/refs/heads/main/V2bX.service"
+    file="https://raw.githubusercontent.com/phungvanquy/v2bx-script-new/refs/heads/main/V2bX.service"
     wget -q -N --no-check-certificate -O /etc/systemd/system/V2bX.service ${file}
     #cp -f V2bX.service /etc/systemd/system/
     systemctl daemon-reload
@@ -163,7 +163,7 @@ install_V2bX() {
         if [[ $? == 0 ]]; then
             echo -e "${green}V2bX restarted successfully${plain}"
         else
-            echo -e "${red}V2bX may have failed to start. Please check the log using V2bX log later. If it cannot start, the configuration format may have changed. Please refer to the wiki: https://github.com/V2bX-project/V2bX/wiki${plain}"
+            echo -e "${red}V2bX may have failed to start. Please check the log using V2bX log later. If it cannot start, the configuration format may have changed. Please refer to the wiki: https://github.com/phungvanquy/v2bx-new/wiki${plain}"
         fi
         first_install=false
     fi
@@ -180,7 +180,7 @@ install_V2bX() {
     if [[ ! -f /etc/V2bX/custom_inbound.json ]]; then
         cp custom_inbound.json /etc/V2bX/
     fi
-    curl -o /usr/bin/V2bX -Ls https://raw.githubusercontent.com/phungvanquy/V2bx-script/refs/heads/main/V2bX.sh
+    curl -o /usr/bin/V2bX -Ls https://raw.githubusercontent.com/phungvanquy/v2bx-script-new/refs/heads/main/V2bX.sh
     chmod +x /usr/bin/V2bX
     if [ ! -L /usr/bin/v2bx ]; then
         ln -s /usr/bin/V2bX /usr/bin/v2bx
@@ -211,7 +211,7 @@ install_V2bX() {
     if [[ $first_install == true ]]; then
         read -rp "Detected that this is your first installation of V2bX, do you want to automatically generate the configuration file? (y/n): " if_generate
         if [[ $if_generate == [Yy] ]]; then
-            curl -o ./initconfig.sh -Ls https://raw.githubusercontent.com/phungvanquy/V2bx-script/refs/heads/main/initconfig.sh
+            curl -o ./initconfig.sh -Ls https://raw.githubusercontent.com/phungvanquy/v2bx-script-new/refs/heads/main/initconfig.sh
             source initconfig.sh
             rm initconfig.sh -f
             generate_config_file
