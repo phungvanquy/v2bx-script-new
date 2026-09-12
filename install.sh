@@ -5,7 +5,44 @@ green='\033[0;32m'
 yellow='\033[0;33m'
 plain='\033[0m'
 
-cur_dir=$(pwd)
+v2bx_repo="phungvanquy/v2bx-new"
+script_repo="phungvanquy/v2bx-script-new"
+install_dir="/usr/local/V2bX"
+service_file="/etc/systemd/system/V2bX.service"
+management_file="/usr/bin/V2bX"
+install_temp_dir=""
+
+cleanup_install_temp() {
+    if [[ -n "${install_temp_dir}" && -d "${install_temp_dir}" ]]; then
+        rm -rf "${install_temp_dir}"
+    fi
+}
+
+download_file() {
+    local url=$1
+    local destination=$2
+
+    curl --fail --location --silent --show-error \
+        --retry 3 --retry-delay 2 --connect-timeout 15 \
+        --output "${destination}" "${url}"
+}
+
+show_v050_compatibility_notice() {
+    local version=${1#v}
+    local major=${version%%.*}
+    local remainder=${version#*.}
+    local minor=${remainder%%.*}
+
+    if [[ "${major}" =~ ^[0-9]+$ && "${minor}" =~ ^[0-9]+$ ]] && \
+        (( major > 0 || minor >= 5 )); then
+        echo -e "${yellow}Compatibility note for V2bX v0.5.0 and later:${plain}"
+        echo "- Xray no longer supports legacy transport-header types named SRTP, TLS, UTP, WeChat, or WireGuard."
+        echo "- Xray rejects plaintext Shadowsocks methods (none/plain) and DisableIVCheck=true."
+        echo "Review custom or panel-managed node settings before a production rollout."
+    fi
+}
+
+trap cleanup_install_temp EXIT
 
 # check root
 [[ $EUID -ne 0 ]] && echo -e "${red}Error:${plain} This script must be run as root!\n" && exit 1
@@ -41,8 +78,8 @@ elif [[ $arch == "aarch64" || $arch == "arm64" ]]; then
 elif [[ $arch == "s390x" ]]; then
     arch="s390x"
 else
-    arch="64"
-    echo -e "${red}Architecture detection failed, using default architecture: ${arch}${plain}"
+    echo -e "${red}Unsupported architecture: ${arch}. Supported architectures: amd64, arm64, and s390x.${plain}"
+    exit 2
 fi
 
 echo "Architecture: ${arch}"
@@ -105,89 +142,258 @@ check_status() {
 }
 
 install_V2bX() {
-    if [[ -e /usr/local/V2bX/ ]]; then
-        rm -rf /usr/local/V2bX/
-    fi
+    local archive_url
+    local archive_path
+    local digest_path
+    local expected_sha256
+    local actual_sha256
+    local package_dir
+    local downloaded_service
+    local downloaded_script
+    local backup_dir="${install_dir}.rollback.$$"
+    local service_backup
+    local management_backup
+    local geoip_backup
+    local geosite_backup
+    local had_install=false
+    local had_geoip=false
+    local had_geosite=false
+    local was_enabled=false
+    local was_running=false
+    local service_started=false
+    local required_file
+    local config_file
+    local -a created_config_files=()
 
-    mkdir /usr/local/V2bX/ -p
-    cd /usr/local/V2bX/
-
-    if  [ $# == 0 ] ;then
-        last_version=$(curl -Ls "https://api.github.com/repos/phungvanquy/v2bx-new/releases/latest" | grep '"tag_name":' | sed -E 's/.*"([^"]+)".*/\1/')
-        if [[ ! -n "$last_version" ]]; then
+    if [[ $# -eq 0 || -z "${1:-}" ]]; then
+        last_version=$(curl --fail --location --silent --show-error \
+            --retry 3 --retry-delay 2 --connect-timeout 15 \
+            "https://api.github.com/repos/${v2bx_repo}/releases/latest" |
+            sed -nE 's/.*"tag_name": *"([^"]+)".*/\1/p' | head -n 1)
+        if [[ -z "${last_version}" ]]; then
             echo -e "${red}Failed to detect V2bX version, possibly exceeding Github API limit. Please try again later or manually specify the V2bX version to install.${plain}"
-            exit 1
-        fi
-        echo -e "Detected the latest version of V2bX: ${last_version}, starting installation"
-        wget -q -N --no-check-certificate -O /usr/local/V2bX/V2bX-linux.zip https://github.com/phungvanquy/v2bx-new/releases/download/${last_version}/V2bX-linux-${arch}.zip
-        if [[ $? -ne 0 ]]; then
-            echo -e "${red}Failed to download V2bX, please ensure your server can download files from Github${plain}"
-            exit 1
+            return 1
         fi
     else
         last_version=$1
-        url="https://github.com/phungvanquy/v2bx-new/releases/download/${last_version}/V2bX-linux-${arch}.zip"
-        echo -e "Starting installation of V2bX $1"
-        wget -q -N --no-check-certificate -O /usr/local/V2bX/V2bX-linux.zip ${url}
-        if [[ $? -ne 0 ]]; then
-            echo -e "${red}Failed to download V2bX $1, please ensure this version exists${plain}"
-            exit 1
-        fi
     fi
 
-    unzip V2bX-linux.zip
-    rm V2bX-linux.zip -f
-    chmod +x V2bX
-    mkdir /etc/V2bX/ -p
-    rm /etc/systemd/system/V2bX.service -f
-    file="https://raw.githubusercontent.com/phungvanquy/v2bx-script-new/refs/heads/main/V2bX.service"
-    wget -q -N --no-check-certificate -O /etc/systemd/system/V2bX.service ${file}
-    #cp -f V2bX.service /etc/systemd/system/
-    systemctl daemon-reload
-    systemctl stop V2bX
-    systemctl enable V2bX
-    echo -e "${green}V2bX ${last_version}${plain} installation completed, set to start on boot"
-    cp geoip.dat /etc/V2bX/
-    cp geosite.dat /etc/V2bX/
+    if [[ "${last_version}" =~ ^[0-9] ]]; then
+        last_version="v${last_version}"
+    fi
+
+    echo -e "Detected V2bX ${last_version}; downloading and verifying the release"
+    install_temp_dir=$(mktemp -d /tmp/v2bx-install.XXXXXX) || return 1
+    archive_path="${install_temp_dir}/V2bX-linux-${arch}.zip"
+    digest_path="${archive_path}.dgst"
+    package_dir="${install_temp_dir}/package"
+    downloaded_service="${install_temp_dir}/V2bX.service"
+    downloaded_script="${install_temp_dir}/V2bX.sh"
+    service_backup="${install_temp_dir}/V2bX.service.previous"
+    management_backup="${install_temp_dir}/V2bX.sh.previous"
+    geoip_backup="${install_temp_dir}/geoip.dat.previous"
+    geosite_backup="${install_temp_dir}/geosite.dat.previous"
+    archive_url="https://github.com/${v2bx_repo}/releases/download/${last_version}/V2bX-linux-${arch}.zip"
+
+    if ! download_file "${archive_url}" "${archive_path}" || \
+        ! download_file "${archive_url}.dgst" "${digest_path}"; then
+        echo -e "${red}Failed to download V2bX ${last_version} and its digest from GitHub.${plain}"
+        return 1
+    fi
+
+    expected_sha256=$(sed -nE 's/^SHA2-256= ([0-9a-fA-F]{64})$/\1/p' "${digest_path}")
+    actual_sha256=$(sha256sum "${archive_path}" | awk '{print $1}')
+    if [[ -z "${expected_sha256}" || "${actual_sha256}" != "${expected_sha256,,}" ]]; then
+        echo -e "${red}V2bX archive checksum verification failed; the installed version was not changed.${plain}"
+        return 1
+    fi
+
+    mkdir -p "${package_dir}"
+    if ! unzip -q "${archive_path}" -d "${package_dir}"; then
+        echo -e "${red}The V2bX release archive is invalid; the installed version was not changed.${plain}"
+        return 1
+    fi
+    for required_file in V2bX config.json dns.json route.json custom_outbound.json \
+        custom_inbound.json geoip.dat geosite.dat; do
+        if [[ ! -s "${package_dir}/${required_file}" ]]; then
+            echo -e "${red}The release archive is missing ${required_file}; the installed version was not changed.${plain}"
+            return 1
+        fi
+    done
+    chmod +x "${package_dir}/V2bX"
+
+    if ! download_file \
+        "https://raw.githubusercontent.com/${script_repo}/refs/heads/main/V2bX.service" \
+        "${downloaded_service}" || \
+        ! download_file \
+        "https://raw.githubusercontent.com/${script_repo}/refs/heads/main/V2bX.sh" \
+        "${downloaded_script}"; then
+        echo -e "${red}Failed to download the service or management script; the installed version was not changed.${plain}"
+        return 1
+    fi
+    if ! bash -n "${downloaded_script}" || \
+        ! grep -q '^ExecStart=/usr/local/V2bX/V2bX server$' "${downloaded_service}"; then
+        echo -e "${red}The downloaded management script or service file is invalid; the installed version was not changed.${plain}"
+        return 1
+    fi
+
+    if [[ -e "${backup_dir}" ]]; then
+        echo -e "${red}Cannot create rollback directory ${backup_dir}; the installed version was not changed.${plain}"
+        return 1
+    fi
+    if [[ -d "${install_dir}" ]]; then
+        had_install=true
+    fi
+    if systemctl is-active --quiet V2bX 2>/dev/null; then
+        was_running=true
+    fi
+    if systemctl is-enabled --quiet V2bX 2>/dev/null; then
+        was_enabled=true
+    fi
+    if [[ -f "${service_file}" ]]; then
+        if ! cp -p "${service_file}" "${service_backup}"; then
+            echo -e "${red}Failed to back up the existing service file; the installed version was not changed.${plain}"
+            return 1
+        fi
+    fi
+    if [[ -f "${management_file}" ]]; then
+        if ! cp -p "${management_file}" "${management_backup}"; then
+            echo -e "${red}Failed to back up the existing management script; the installed version was not changed.${plain}"
+            return 1
+        fi
+    fi
+    if [[ -f /etc/V2bX/geoip.dat ]]; then
+        had_geoip=true
+        cp -p /etc/V2bX/geoip.dat "${geoip_backup}" || return 1
+    fi
+    if [[ -f /etc/V2bX/geosite.dat ]]; then
+        had_geosite=true
+        cp -p /etc/V2bX/geosite.dat "${geosite_backup}" || return 1
+    fi
+
+    rollback_install() {
+        systemctl stop V2bX 2>/dev/null || true
+        rm -rf "${install_dir}"
+        if [[ "${had_install}" == true && -d "${backup_dir}" ]]; then
+            mv "${backup_dir}" "${install_dir}"
+        fi
+        if [[ -f "${service_backup}" ]]; then
+            cp -p "${service_backup}" "${service_file}"
+        else
+            rm -f "${service_file}"
+        fi
+        if [[ -f "${management_backup}" ]]; then
+            cp -p "${management_backup}" "${management_file}"
+        else
+            rm -f "${management_file}"
+        fi
+        if [[ "${had_geoip}" == true ]]; then
+            cp -p "${geoip_backup}" /etc/V2bX/geoip.dat 2>/dev/null || true
+        else
+            rm -f /etc/V2bX/geoip.dat
+        fi
+        if [[ "${had_geosite}" == true ]]; then
+            cp -p "${geosite_backup}" /etc/V2bX/geosite.dat 2>/dev/null || true
+        else
+            rm -f /etc/V2bX/geosite.dat
+        fi
+        for config_file in "${created_config_files[@]}"; do
+            rm -f "${config_file}"
+        done
+        systemctl daemon-reload 2>/dev/null || true
+        if [[ "${was_enabled}" == true ]]; then
+            systemctl enable V2bX >/dev/null 2>&1 || true
+        else
+            systemctl disable V2bX >/dev/null 2>&1 || true
+        fi
+        if [[ "${was_running}" == true ]]; then
+            systemctl start V2bX 2>/dev/null || true
+        fi
+    }
+
+    systemctl stop V2bX 2>/dev/null || true
+    if [[ "${had_install}" == true ]]; then
+        if ! mv "${install_dir}" "${backup_dir}"; then
+            echo -e "${red}Failed to prepare the existing installation for upgrade.${plain}"
+            if [[ "${was_running}" == true ]]; then
+                systemctl start V2bX 2>/dev/null || true
+            fi
+            return 1
+        fi
+    fi
+    if ! mv "${package_dir}" "${install_dir}"; then
+        rollback_install
+        echo -e "${red}Failed to activate the downloaded release.${plain}"
+        return 1
+    fi
+
+    if ! mkdir -p /etc/V2bX/ || \
+        ! install -m 0644 "${downloaded_service}" "${service_file}" || \
+        ! install -m 0755 "${downloaded_script}" "${management_file}" || \
+        ! systemctl daemon-reload || \
+        ! systemctl enable V2bX || \
+        ! cp "${install_dir}/geoip.dat" /etc/V2bX/ || \
+        ! cp "${install_dir}/geosite.dat" /etc/V2bX/; then
+        echo -e "${red}Failed to activate V2bX ${last_version}; restoring the previous installation.${plain}"
+        rollback_install
+        return 1
+    fi
+
+    for config_file in dns.json route.json custom_outbound.json custom_inbound.json; do
+        if [[ ! -f "/etc/V2bX/${config_file}" ]]; then
+            created_config_files+=("/etc/V2bX/${config_file}")
+            if ! cp "${install_dir}/${config_file}" "/etc/V2bX/${config_file}"; then
+                echo -e "${red}Failed to install ${config_file}; restoring the previous installation.${plain}"
+                rollback_install
+                return 1
+            fi
+        fi
+    done
 
     if [[ ! -f /etc/V2bX/config.json ]]; then
-        cp config.json /etc/V2bX/
+        created_config_files+=("/etc/V2bX/config.json")
+        if ! cp "${install_dir}/config.json" /etc/V2bX/; then
+            echo -e "${red}Failed to install the default configuration; restoring the previous installation.${plain}"
+            rollback_install
+            return 1
+        fi
         echo -e ""
         echo -e "Fresh installation, please refer to the tutorial: https://v2bx.v-50.me/ and configure the necessary content"
         first_install=true
     else
-        systemctl start V2bX
-        sleep 2
-        check_status
+        if systemctl start V2bX; then
+            for _ in 1 2 3 4 5; do
+                sleep 2
+                if check_status; then
+                    service_started=true
+                    break
+                fi
+            done
+        fi
         echo -e ""
-        if [[ $? == 0 ]]; then
+        if [[ "${service_started}" == true ]]; then
             echo -e "${green}V2bX restarted successfully${plain}"
         else
-            echo -e "${red}V2bX may have failed to start. Please check the log using V2bX log later. If it cannot start, the configuration format may have changed. Please refer to the wiki: https://github.com/phungvanquy/v2bx-new/wiki${plain}"
+            echo -e "${red}V2bX ${last_version} failed to start.${plain}"
+            echo -e "${yellow}Restoring the previous V2bX installation.${plain}"
+            rollback_install
+            echo -e "${red}Check the service log and configuration compatibility before trying again.${plain}"
+            show_v050_compatibility_notice "${last_version}"
+            return 1
         fi
         first_install=false
     fi
 
-    if [[ ! -f /etc/V2bX/dns.json ]]; then
-        cp dns.json /etc/V2bX/
-    fi
-    if [[ ! -f /etc/V2bX/route.json ]]; then
-        cp route.json /etc/V2bX/
-    fi
-    if [[ ! -f /etc/V2bX/custom_outbound.json ]]; then
-        cp custom_outbound.json /etc/V2bX/
-    fi
-    if [[ ! -f /etc/V2bX/custom_inbound.json ]]; then
-        cp custom_inbound.json /etc/V2bX/
-    fi
-    curl -o /usr/bin/V2bX -Ls https://raw.githubusercontent.com/phungvanquy/v2bx-script-new/refs/heads/main/V2bX.sh
-    chmod +x /usr/bin/V2bX
     if [ ! -L /usr/bin/v2bx ]; then
         ln -s /usr/bin/V2bX /usr/bin/v2bx
-        chmod +x /usr/bin/v2bx
     fi
-    cd $cur_dir
-    rm -f install.sh
+
+    if [[ "${had_install}" == true && -d "${backup_dir}" ]]; then
+        rm -rf "${backup_dir}"
+    fi
+    echo -e "${green}V2bX ${last_version}${plain} installation completed and enabled at boot"
+    show_v050_compatibility_notice "${last_version}"
+
     echo -e ""
     echo "V2bX management script usage (compatible with using V2bX, case insensitive): "
     echo "------------------------------------------"
@@ -221,4 +427,4 @@ install_V2bX() {
 
 echo -e "${green}Starting installation${plain}"
 install_base
-install_V2bX $1
+install_V2bX "${1:-}"

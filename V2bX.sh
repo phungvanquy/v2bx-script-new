@@ -65,7 +65,7 @@ check_ipv6_support() {
 }
 
 confirm() {
-    if [[ $# > 1 ]]; then
+    if [[ $# -gt 1 ]]; then
         echo && read -rp "$1 [default $2]: " temp
         if [[ x"${temp}" == x"" ]]; then
             temp=$2
@@ -95,27 +95,55 @@ before_show_menu() {
 }
 
 install() {
-    bash <(curl -Ls https://raw.githubusercontent.com/phungvanquy/v2bx-script-new/refs/heads/main/install.sh)
-    if [[ $? == 0 ]]; then
-        if [[ $# == 0 ]]; then
-            start
-        else
-            start 0
-        fi
+    local installer
+    installer=$(mktemp /tmp/v2bx-installer.XXXXXX) || return 1
+    if ! curl --fail --location --silent --show-error \
+        --retry 3 --retry-delay 2 --connect-timeout 15 \
+        --output "${installer}" \
+        https://raw.githubusercontent.com/phungvanquy/v2bx-script-new/refs/heads/main/install.sh; then
+        rm -f "${installer}"
+        echo -e "${red}Failed to download the V2bX installer.${plain}"
+        return 1
+    fi
+    if ! bash -n "${installer}" || ! bash "${installer}"; then
+        rm -f "${installer}"
+        return 1
+    fi
+    rm -f "${installer}"
+    if [[ $# -eq 0 ]]; then
+        start
+    else
+        start 0
     fi
 }
 
 update() {
+    local installer
     if [[ $# == 0 ]]; then
         echo && echo -n -e "Enter the specified version (default latest): " && read version
     else
         version=$2
     fi
-    bash <(curl -Ls https://raw.githubusercontent.com/phungvanquy/v2bx-script-new/refs/heads/main/install.sh) $version
-    if [[ $? == 0 ]]; then
+    installer=$(mktemp /tmp/v2bx-installer.XXXXXX) || return 1
+    if ! curl --fail --location --silent --show-error \
+        --retry 3 --retry-delay 2 --connect-timeout 15 \
+        --output "${installer}" \
+        https://raw.githubusercontent.com/phungvanquy/v2bx-script-new/refs/heads/main/install.sh; then
+        rm -f "${installer}"
+        echo -e "${red}Failed to download the V2bX installer.${plain}"
+        return 1
+    fi
+    if ! bash -n "${installer}"; then
+        rm -f "${installer}"
+        echo -e "${red}The downloaded V2bX installer is invalid.${plain}"
+        return 1
+    fi
+    if bash "${installer}" "${version}"; then
+        rm -f "${installer}"
         echo -e "${green}Update complete, V2bX has been automatically restarted, please use V2bX log to view the running log${plain}"
         exit
     fi
+    rm -f "${installer}"
 
     if [[ $# == 0 ]]; then
         before_show_menu
@@ -260,13 +288,20 @@ show_log() {
 }
 
 update_shell() {
-    wget -O /usr/bin/V2bX -N --no-check-certificate https://raw.githubusercontent.com/phungvanquy/v2bx-script-new/refs/heads/main/V2bX.sh
-    if [[ $? != 0 ]]; then
+    local updated_script
+    updated_script=$(mktemp /tmp/v2bx-management.XXXXXX) || return 1
+    if ! curl --fail --location --silent --show-error \
+        --retry 3 --retry-delay 2 --connect-timeout 15 \
+        --output "${updated_script}" \
+        https://raw.githubusercontent.com/phungvanquy/v2bx-script-new/refs/heads/main/V2bX.sh || \
+        ! bash -n "${updated_script}"; then
+        rm -f "${updated_script}"
         echo ""
         echo -e "${red}Failed to download the script, please check if the machine can connect to Github${plain}"
         before_show_menu
     else
-        chmod +x /usr/bin/V2bX
+        install -m 0755 "${updated_script}" /usr/bin/V2bX
+        rm -f "${updated_script}"
         echo -e "${green}Script upgrade successful, please rerun the script${plain}" && exit 0
     fi
 }
@@ -380,7 +415,7 @@ add_node_config() {
         core_hysteria2=true
     else
         echo "Invalid choice. Please select 1, 2, or 3."
-        continue
+        return 1
     fi
     while true; do
         read -rp "Please enter the node Node ID: " NodeID
@@ -437,7 +472,7 @@ add_node_config() {
                 3 ) certmode="self" ;;
             esac
             read -rp "Please enter the node certificate domain (example.com):" certdomain
-            if [ $certmode != "http" ]; then
+            if [ "${certmode}" != "http" ]; then
                 echo -e "${red}Please manually modify the configuration file and restart V2bX!${plain}"
             fi
         fi
@@ -558,6 +593,7 @@ generate_config_file() {
     first_node=true
     core_xray=false
     core_sing=false
+    core_hysteria2=false
     fixed_api_info=false
     check_api=false
     
@@ -903,7 +939,7 @@ ${green}V2bX installation and management script,${plain} ${red}not suitable for 
 }
 
 
-if [[ $# > 0 ]]; then
+if [[ $# -gt 0 ]]; then
     case $1 in
         "start") check_install 0 && start 0 ;;
         "stop") check_install 0 && stop 0 ;;
@@ -912,8 +948,8 @@ if [[ $# > 0 ]]; then
         "enable") check_install 0 && enable 0 ;;
         "disable") check_install 0 && disable 0 ;;
         "log") check_install 0 && show_log 0 ;;
-        "update") check_install 0 && update 0 $2 ;;
-        "config") config $* ;;
+        "update") check_install 0 && update 0 "${2:-}" ;;
+        "config") config "$@" ;;
         "generate") generate_config_file ;;
         "install") check_uninstall 0 && install 0 ;;
         "uninstall") check_install 0 && uninstall 0 ;;

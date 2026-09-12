@@ -27,7 +27,7 @@ add_node_config() {
         core_hysteria2=true
     else
         echo "Invalid choice. Please select 1 2 3."
-        continue
+        return 1
     fi
     while true; do
         read -rp "Enter node Node ID:" NodeID
@@ -84,7 +84,7 @@ add_node_config() {
                 3 ) certmode="self" ;;
             esac
             read -rp "Enter node certificate domain (example.com)]:" certdomain
-            if [ $certmode != "http" ]; then
+            if [ "${certmode}" != "http" ]; then
                 echo -e "${red}Please manually modify the configuration file and restart V2bX!${plain}"
             fi
         fi
