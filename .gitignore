@@ -1,0 +1,9 @@
+# Editors and operating systems
+.idea/
+.vscode/
+.DS_Store
+
+# Local temporary files
+*.log
+*.tmp
+
