@@ -423,7 +423,7 @@ add_node_config() {
         esac
     fi
     if [ $NodeType == "vless" ]; then
-        read -rp "请选择是否为reality节点？(y/n)" isreality
+        read -rp "Is this a REALITY node? (y/n)" isreality
     fi
     certmode="none"
     certdomain="example.com"
@@ -588,10 +588,10 @@ generate_config_file() {
         fi
     done
 
-    # 初始化核心配置数组
+    # Initialize the core configuration array
     cores_config="["
 
-    # 检查并添加xray核心配置
+    # Add the Xray core configuration when selected
     if [ "$core_xray" = true ]; then
         cores_config+="
     {
@@ -605,7 +605,7 @@ generate_config_file() {
     },"
     fi
 
-    # 检查并添加sing核心配置
+    # Add the sing-box core configuration when selected
     if [ "$core_sing" = true ]; then
         cores_config+="
     {
@@ -623,7 +623,7 @@ generate_config_file() {
     },"
     fi
 
-    # 检查并添加hysteria2核心配置
+    # Add the Hysteria 2 core configuration when selected
     if [ "$core_hysteria2" = true ]; then
         cores_config+="
     {
@@ -634,19 +634,19 @@ generate_config_file() {
     },"
     fi
 
-    # 移除最后一个逗号并关闭数组
+    # Remove the trailing comma and close the array
     cores_config+="]"
     cores_config=$(echo "$cores_config" | sed 's/},]$/}]/')
 
-    # 切换到配置文件目录
+    # Change to the configuration directory
     cd /etc/V2bX
     
-    # 备份旧的配置文件
+    # Back up the existing configuration file
     mv config.json config.json.bak
     nodes_config_str="${nodes_config[*]}"
     formatted_nodes_config="${nodes_config_str%,}"
 
-    # 创建 config.json 文件
+    # Create config.json
     cat <<EOF > /etc/V2bX/config.json
 {
     "Log": {
@@ -658,7 +658,7 @@ generate_config_file() {
 }
 EOF
     
-    # 创建 custom_outbound.json 文件
+    # Create custom_outbound.json
     cat <<EOF > /etc/V2bX/custom_outbound.json
     [
         {
@@ -682,7 +682,7 @@ EOF
     ]
 EOF
     
-    # 创建 route.json 文件
+    # Create route.json
     cat <<EOF > /etc/V2bX/route.json
     {
         "domainStrategy": "AsIs",
@@ -744,7 +744,7 @@ EOF
     }
 EOF
 
-    # 创建 sing_origin.json 文件           
+    # Create sing_origin.json
     cat <<EOF > /etc/V2bX/sing_origin.json
 {
   "outbounds": [
@@ -807,7 +807,7 @@ EOF
 }
 EOF
 
-    # 创建 hy2config.yaml 文件           
+    # Create hy2config.yaml
     cat <<EOF > /etc/V2bX/hy2config.yaml
 quic:
   initStreamReceiveWindow: 8388608
@@ -835,7 +835,7 @@ EOF
     before_show_menu
 }
 
-# 放开防火墙端口
+# Open firewall ports
 open_ports() {
     systemctl stop firewalld.service 2>/dev/null
     systemctl disable firewalld.service 2>/dev/null
@@ -901,7 +901,7 @@ ${green}V2bX backend management script,${plain}${red}not suitable for docker${pl
     ${green}16.${plain} Open all network ports of the VPS
     ${green}17.${plain} Exit script
  "
- #后续更新可加入上方字符串中
+    # Add future menu entries to the string above
     show_status
     echo && read -rp "Please enter your choice [0-17]: " num
 
