@@ -211,9 +211,9 @@ generate_config_file() {
     
     while true; do
         if [ "$first_node" = true ]; then
-            read -rp "Please enter the airport URL:" ApiHost
-            read -rp "Please enter the panel docking API Key:" ApiKey
-            read -rp "Do you want to set a fixed airport URL and API Key? (y/n)" fixed_api
+            read -rp "Please enter the panel URL (https://example.com): " ApiHost
+            read -rp "Please enter the panel API Key: " ApiKey
+            read -rp "Do you want to reuse this panel URL and API Key? (y/n)" fixed_api
             if [ "$fixed_api" = "y" ] || [ "$fixed_api" = "Y" ]; then
                 fixed_api_info=true
                 echo -e "${red}Successfully fixed address${plain}"
@@ -225,8 +225,8 @@ generate_config_file() {
             if [[ "$continue_adding_node" =~ ^[Nn][Oo]? ]]; then
                 break
             elif [ "$fixed_api_info" = false ]; then
-                read -rp "Please enter the airport URL (https://example.com):" ApiHost
-                read -rp "Please enter the panel docking API Key:" ApiKey
+                read -rp "Please enter the panel URL (https://example.com): " ApiHost
+                read -rp "Please enter the panel API Key: " ApiKey
             fi
             add_node_config
         fi
@@ -475,8 +475,4 @@ masquerade:
 EOF
     echo -e "${green}V2bX configuration file generation completed, restarting service${plain}"
     v2bx restart
-}
-
-install_bbr() {
-    bash <(curl -L -s https://github.com/ylx2016/Linux-NetSpeed/raw/master/tcpx.sh)
 }

@@ -259,10 +259,6 @@ show_log() {
     fi
 }
 
-install_bbr() {
-    bash <(curl -L -s https://github.com/ylx2016/Linux-NetSpeed/raw/master/tcpx.sh)
-}
-
 update_shell() {
     wget -O /usr/bin/V2bX -N --no-check-certificate https://raw.githubusercontent.com/phungvanquy/v2bx-script-new/refs/heads/main/V2bX.sh
     if [[ $? != 0 ]]; then
@@ -567,9 +563,9 @@ generate_config_file() {
     
     while true; do
         if [ "$first_node" = true ]; then
-            read -rp "Please enter the airport URL (https://example.com): " ApiHost
+            read -rp "Please enter the panel URL (https://example.com): " ApiHost
             read -rp "Please enter the panel API Key: " ApiKey
-            read -rp "Do you want to set a fixed airport URL and API Key? (y/n)" fixed_api
+            read -rp "Do you want to reuse this panel URL and API Key? (y/n)" fixed_api
             if [ "$fixed_api" = "y" ] || [ "$fixed_api" = "Y" ]; then
                 fixed_api_info=true
                 echo -e "${red}Successfully fixed address${plain}"
@@ -581,7 +577,7 @@ generate_config_file() {
             if [[ "$continue_adding_node" =~ ^[Nn][Oo]? ]]; then
                 break
             elif [ "$fixed_api_info" = false ]; then
-                read -rp "Please enter the airport URL: " ApiHost
+                read -rp "Please enter the panel URL: " ApiHost
                 read -rp "Please enter the panel API Key: " ApiKey
             fi
             add_node_config
@@ -835,23 +831,6 @@ EOF
     before_show_menu
 }
 
-# Open firewall ports
-open_ports() {
-    systemctl stop firewalld.service 2>/dev/null
-    systemctl disable firewalld.service 2>/dev/null
-    setenforce 0 2>/dev/null
-    ufw disable 2>/dev/null
-    iptables -P INPUT ACCEPT 2>/dev/null
-    iptables -P FORWARD ACCEPT 2>/dev/null
-    iptables -P OUTPUT ACCEPT 2>/dev/null
-    iptables -t nat -F 2>/dev/null
-    iptables -t mangle -F 2>/dev/null
-    iptables -F 2>/dev/null
-    iptables -X 2>/dev/null
-    netfilter-persistent save 2>/dev/null
-    echo -e "${green}Successfully opened firewall ports!${plain}"
-}
-
 show_usage() {
     echo "V2bX management script usage: "
     echo "------------------------------------------"
@@ -875,7 +854,7 @@ show_usage() {
 
 show_menu() {
     echo -e "
-${green}V2bX backend management script,${plain}${red}not suitable for docker${plain}
+${green}V2bX installation and management script,${plain} ${red}not suitable for Docker${plain}
 --- https://github.com/phungvanquy/v2bx-new ---
     ${green}0.${plain} Modify configuration
     ————————————————
@@ -892,18 +871,15 @@ ${green}V2bX backend management script,${plain}${red}not suitable for docker${pl
     ${green}9.${plain} Enable V2bX autostart
     ${green}10.${plain} Disable V2bX autostart
 ————————————————
-    ${green}11.${plain} One-click install bbr (latest kernel)
-    ${green}12.${plain} View V2bX version
-    ${green}13.${plain} Generate X25519 key
-    ${green}13.${plain} Generate X25519 key
-    ${green}14.${plain} Update V2bX maintenance script
-    ${green}15.${plain} Generate V2bX configuration file
-    ${green}16.${plain} Open all network ports of the VPS
-    ${green}17.${plain} Exit script
+    ${green}11.${plain} View V2bX version
+    ${green}12.${plain} Generate X25519 key
+    ${green}13.${plain} Update V2bX maintenance script
+    ${green}14.${plain} Generate V2bX configuration file
+    ${green}15.${plain} Exit script
  "
     # Add future menu entries to the string above
     show_status
-    echo && read -rp "Please enter your choice [0-17]: " num
+    echo && read -rp "Please enter your choice [0-15]: " num
 
     case "${num}" in
         0) config ;;
@@ -917,14 +893,12 @@ ${green}V2bX backend management script,${plain}${red}not suitable for docker${pl
         8) check_install && show_log ;;
         9) check_install && enable ;;
         10) check_install && disable ;;
-        11) install_bbr ;;
-        12) check_install && show_V2bX_version ;;
-        13) check_install && generate_x25519_key ;;
-        14) update_shell ;;
-        15) generate_config_file ;;
-        16) open_ports ;;
-        17) exit ;;
-        *) echo -e "${red}Please enter a valid number [0-17]${plain}" ;;
+        11) check_install && show_V2bX_version ;;
+        12) check_install && generate_x25519_key ;;
+        13) update_shell ;;
+        14) check_install && generate_config_file ;;
+        15) exit ;;
+        *) echo -e "${red}Please enter a valid number [0-15]${plain}" ;;
     esac
 }
 

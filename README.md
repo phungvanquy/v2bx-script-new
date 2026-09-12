@@ -1,18 +1,15 @@
-# V2bX
-A V2board node server based on Xray-Core.
+# V2bX installation script
 
-A V2board node service based on Xray, supporting V2ray, Trojan, and Shadowsocks protocols.
+This repository contains the installation and management scripts for
+[phungvanquy/v2bx-new](https://github.com/phungvanquy/v2bx-new), a multi-core
+V2Board node server supporting V2Ray, Trojan, Shadowsocks, and Hysteria.
 
-Find the source code here: [phungvanquy/v2bx-new](https://github.com/phungvanquy/v2bx-new)
+## Documentation
 
-If you are not confident about the script, you can test it in this sandbox before using it: https://killercoda.com/playgrounds/scenario/ubuntu
+[V2bX usage guide](https://v2bx.v-50.me/)
 
-# Detailed Usage Tutorial
+## One-click installation
 
-[Tutorial](https://v2bx.v-50.me/)
-
-# One-Click Installation
-
-```
+```bash
 wget -N https://raw.githubusercontent.com/phungvanquy/v2bx-script-new/refs/heads/main/install.sh && bash install.sh
 ```
