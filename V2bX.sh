@@ -5,6 +5,41 @@ green='\033[0;32m'
 yellow='\033[0;33m'
 plain='\033[0m'
 
+elise_command() {
+    local helper=/usr/bin/V2bX-elise
+    local downloaded
+    if [[ ! -x "$helper" ]]; then
+        downloaded=$(mktemp /tmp/v2bx-elise-helper.XXXXXX) || return 1
+        if ! curl --fail --location --silent --show-error \
+            --retry 3 --retry-delay 2 --connect-timeout 15 \
+            --output "$downloaded" \
+            https://raw.githubusercontent.com/phungvanquy/v2bx-script-new/refs/heads/main/elise.sh ||
+            [[ ! -s "$downloaded" ]] ||
+            ! bash -n "$downloaded"; then
+            rm -f "$downloaded"
+            return 1
+        fi
+        install -m 0755 "$downloaded" "$helper"
+        rm -f "$downloaded"
+    fi
+    "$helper" "$@"
+}
+
+elise_menu() {
+    local choice kind node_id instance
+    echo 'Elise Rust core: 1) Install/update  2) Add node  3) List  4) Status  5) Logs  6) Remove node'
+    read -rp 'Choice: ' choice
+    case "$choice" in
+        1) elise_command install ;;
+        2) read -rp 'Protocol (vless/vmess): ' kind; read -rp 'Node ID: ' node_id; elise_command add "$kind" "$node_id" ;;
+        3) elise_command list ;;
+        4) read -rp 'Instance (vless-<id>/vmess-<id>): ' instance; elise_command status "$instance" ;;
+        5) read -rp 'Instance (vless-<id>/vmess-<id>): ' instance; elise_command log "$instance" ;;
+        6) read -rp 'Instance (vless-<id>/vmess-<id>): ' instance; elise_command remove "$instance" ;;
+        *) echo 'Invalid choice' ;;
+    esac
+}
+
 # check root
 [[ $EUID -ne 0 ]] && echo -e "${red}Error: ${plain} Must be run as root!\n" && exit 1
 
@@ -180,6 +215,10 @@ uninstall() {
             show_menu
         fi
         return 0
+    fi
+    if [[ -x /usr/bin/V2bX-elise ]]; then
+        /usr/bin/V2bX-elise uninstall || return 1
+        rm -f /usr/bin/V2bX-elise
     fi
     systemctl stop V2bX
     systemctl disable V2bX
@@ -441,7 +480,7 @@ add_node_config() {
         if [ "$core_hysteria2" == true ] && [ "$core_sing" = false ]; then
             echo -e "${green}5. Hysteria2${plain}"
         fi
-        echo -e "${green}6. Trojan${plain}"  
+        echo -e "${green}6. Trojan${plain}"
         read -rp "Please enter:" NodeType
         case "$NodeType" in
             1 ) NodeType="shadowsocks" ;;
@@ -483,7 +522,7 @@ add_node_config() {
         listen_ip="::"
     fi
     node_config=""
-    if [ "$core_type" == "1" ]; then 
+    if [ "$core_type" == "1" ]; then
     node_config=$(cat <<EOF
 {
             "Core": "$core",
@@ -588,7 +627,7 @@ generate_config_file() {
     if [[ "$continue_prompt" =~ ^[Nn][Oo]? ]]; then
         exit 0
     fi
-    
+
     nodes_config=()
     first_node=true
     core_xray=false
@@ -596,7 +635,7 @@ generate_config_file() {
     core_hysteria2=false
     fixed_api_info=false
     check_api=false
-    
+
     while true; do
         if [ "$first_node" = true ]; then
             read -rp "Please enter the panel URL (https://example.com): " ApiHost
@@ -672,7 +711,7 @@ generate_config_file() {
 
     # Change to the configuration directory
     cd /etc/V2bX
-    
+
     # Back up the existing configuration file
     mv config.json config.json.bak
     nodes_config_str="${nodes_config[*]}"
@@ -689,7 +728,7 @@ generate_config_file() {
     "Nodes": [$formatted_nodes_config]
 }
 EOF
-    
+
     # Create custom_outbound.json
     cat <<EOF > /etc/V2bX/custom_outbound.json
     [
@@ -713,7 +752,7 @@ EOF
         }
     ]
 EOF
-    
+
     # Create route.json
     cat <<EOF > /etc/V2bX/route.json
     {
@@ -885,6 +924,7 @@ show_usage() {
     echo "V2bX install      - Install V2bX"
     echo "V2bX uninstall    - Uninstall V2bX"
     echo "V2bX version      - Show V2bX version"
+    echo "V2bX elise ...    - Manage Elise Rust VLESS/VMess nodes"
     echo "------------------------------------------"
 }
 
@@ -912,10 +952,11 @@ ${green}V2bX installation and management script,${plain} ${red}not suitable for 
     ${green}13.${plain} Update V2bX maintenance script
     ${green}14.${plain} Generate V2bX configuration file
     ${green}15.${plain} Exit script
+    ${green}16.${plain} Elise Rust core
  "
     # Add future menu entries to the string above
     show_status
-    echo && read -rp "Please enter your choice [0-15]: " num
+    echo && read -rp "Please enter your choice [0-16]: " num
 
     case "${num}" in
         0) config ;;
@@ -934,7 +975,8 @@ ${green}V2bX installation and management script,${plain} ${red}not suitable for 
         13) update_shell ;;
         14) check_install && generate_config_file ;;
         15) exit ;;
-        *) echo -e "${red}Please enter a valid number [0-15]${plain}" ;;
+        16) elise_menu ;;
+        *) echo -e "${red}Please enter a valid number [0-16]${plain}" ;;
     esac
 }
 
@@ -956,6 +998,7 @@ if [[ $# -gt 0 ]]; then
         "x25519") check_install 0 && generate_x25519_key 0 ;;
         "version") check_install 0 && show_V2bX_version 0 ;;
         "update_shell") update_shell ;;
+        "elise") shift; elise_command "$@" ;;
         *) show_usage
     esac
 else

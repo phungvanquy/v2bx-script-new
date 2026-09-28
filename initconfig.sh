@@ -15,6 +15,7 @@ add_node_config() {
     echo -e "${green}1. xray${plain}"
     echo -e "${green}2. singbox${plain}"
     echo -e "${green}3. hysteria2${plain}"
+    echo -e "${green}4. Elise Rust (VLESS/VMess, separate service)${plain}"
     read -rp "Enter:" core_type
     if [ "$core_type" == "1" ]; then
         core="xray"
@@ -25,8 +26,10 @@ add_node_config() {
     elif [ "$core_type" == "3" ]; then
         core="hysteria2"
         core_hysteria2=true
+    elif [ "$core_type" == "4" ]; then
+        core="elise"
     else
-        echo "Invalid choice. Please select 1 2 3."
+        echo "Invalid choice. Please select 1 2 3 4."
         return 1
     fi
     while true; do
@@ -38,6 +41,20 @@ add_node_config() {
             echo "Error: Please enter a valid number as Node ID."
         fi
     done
+
+    if [ "$core_type" == "4" ]; then
+        read -rp "Elise protocol (vless/vmess): " NodeType
+        if [[ "$NodeType" != "vless" && "$NodeType" != "vmess" ]]; then
+            echo "Elise currently accepts vless or vmess in this wizard."
+            return 1
+        fi
+        if [ "$elise_installed" = false ]; then
+            V2bX elise install || return 1
+            elise_installed=true
+        fi
+        V2bX elise add "$NodeType" "$NodeID" || return 1
+        return 0
+    fi
 
     if [ "$core_hysteria2" = true ] && [ "$core_xray" = false ] && [ "$core_sing" = false ]; then
         NodeType="hysteria2"
@@ -53,7 +70,7 @@ add_node_config() {
         if [ "$core_hysteria2" == true ] && [ "$core_sing" = false ]; then
             echo -e "${green}5. Hysteria2${plain}"
         fi
-        echo -e "${green}6. Trojan${plain}"  
+        echo -e "${green}6. Trojan${plain}"
         read -rp "Enter:" NodeType
         case "$NodeType" in
             1 ) NodeType="shadowsocks" ;;
@@ -95,7 +112,7 @@ add_node_config() {
         listen_ip="::"
     fi
     node_config=""
-    if [ "$core_type" == "1" ]; then 
+    if [ "$core_type" == "1" ]; then
     node_config=$(cat <<EOF
 {
             "Core": "$core",
@@ -200,15 +217,16 @@ generate_config_file() {
     if [[ "$continue_prompt" =~ ^[Nn][Oo]? ]]; then
         exit 0
     fi
-    
+
     nodes_config=()
     first_node=true
     core_xray=false
     core_sing=false
     core_hysteria2=false
+    elise_installed=false
     fixed_api_info=false
     check_api=false
-    
+
     while true; do
         if [ "$first_node" = true ]; then
             read -rp "Please enter the panel URL (https://example.com): " ApiHost
@@ -219,7 +237,7 @@ generate_config_file() {
                 echo -e "${red}Successfully fixed address${plain}"
             fi
             first_node=false
-            add_node_config
+            add_node_config || return 1
         else
             read -rp "Do you want to continue adding node configuration? (Press Enter to continue, enter n or no to exit)" continue_adding_node
             if [[ "$continue_adding_node" =~ ^[Nn][Oo]? ]]; then
@@ -228,9 +246,15 @@ generate_config_file() {
                 read -rp "Please enter the panel URL (https://example.com): " ApiHost
                 read -rp "Please enter the panel API Key: " ApiKey
             fi
-            add_node_config
+            add_node_config || return 1
         fi
     done
+
+    if [[ ${#nodes_config[@]} -eq 0 ]]; then
+        echo -e "${green}Elise nodes are configured. No Go-managed nodes were selected.${plain}"
+        systemctl disable --now V2bX 2>/dev/null || true
+        return 0
+    fi
 
     # Initialize core configuration array
     cores_config="["
@@ -284,7 +308,7 @@ generate_config_file() {
 
     # Switch to the configuration file directory
     cd /etc/V2bX
-    
+
     # Backup the old configuration file
     mv config.json config.json.bak
     nodes_config_str="${nodes_config[*]}"
@@ -301,7 +325,7 @@ generate_config_file() {
     "Nodes": [$formatted_nodes_config]
 }
 EOF
-    
+
     # Create custom_outbound.json file
     cat <<EOF > /etc/V2bX/custom_outbound.json
     [
@@ -325,7 +349,7 @@ EOF
         }
     ]
 EOF
-    
+
     # Create route.json file
     cat <<EOF > /etc/V2bX/route.json
     {
@@ -387,7 +411,7 @@ EOF
     }
 EOF
 
-    # Create sing_origin.json file           
+    # Create sing_origin.json file
     cat <<EOF > /etc/V2bX/sing_origin.json
 {
   "outbounds": [
@@ -450,7 +474,7 @@ EOF
 }
 EOF
 
-    # Create hy2config.yaml file           
+    # Create hy2config.yaml file
     cat <<EOF > /etc/V2bX/hy2config.yaml
 quic:
   initStreamReceiveWindow: 8388608
